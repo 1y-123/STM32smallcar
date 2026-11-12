@@ -140,6 +140,22 @@
    as "no change" keeps stick noise from chattering the output (jitter) */
 #define SERVO_DEAD_US       20
 
+/* ---- slew limit ----
+   How fast the command handed to the servo may move, in us per second.
+   The arm's full travel is 572..2223 us, i.e. 1651 us end to end; at 2000
+   us/s that takes about 0.83 s, and one side alone (828 us) about 0.41 s.
+   Without this limit a flick of the lever asks the servo to jump 828 us in
+   a single frame: it slams to the new position, overshoots, and then hunts
+   while drawing a current spike that drags the 5 V rail down.  Sweeping
+   instead keeps the position error small the whole way, so it arrives
+   quietly.  Raise this if steering feels sluggish, lower it if it still
+   twitches on arrival.                                                 */
+#define SERVO_SLEW_US_PER_S   2000
+
+/* ceiling on a single update step, so a long stall of the main loop (or the
+   first pass after power-up) cannot jump the command in one frame */
+#define SERVO_SLEW_MAX_STEP     60
+
 #define IABS(x)       ((x) < 0 ? -(x) : (x))
 /* USER CODE END PD */
 
@@ -315,12 +331,15 @@ static void RC_Control(void)
   int32_t vx, vy, wz;
   int32_t lf, rf, rr, lr, mx, yawfix;
   int32_t p, d, us;
-  /* -1 = nothing written yet, so the first pass always writes.  Starting
-     this at the centre value instead would make the dead band swallow the
-     very first update and the servo would get no pulse at all. */
-  static int32_t servo_us = -1;   /* last value actually written */
-  static uint32_t kick_until = 0; /* start-up boost runs until this tick */
-  static uint8_t  kick_idle  = 1; /* the sticks were all centred last pass */
+  /* -1 = nothing known yet, so the first pass always takes the target as it
+     stands.  Starting these at the centre value instead would make the dead
+     band swallow the very first update and the servo would get no pulse. */
+  static int32_t  servo_wr   = -1; /* last value actually written to CCR    */
+  static int32_t  servo_tgt  = -1; /* noise-filtered target we aim for      */
+  static int32_t  servo_cur  = -1; /* command after the slew limit          */
+  static uint32_t servo_tick = 0;  /* tick of the previous slew update      */
+  static uint32_t kick_until = 0;  /* start-up boost runs until this tick   */
+  static uint8_t  kick_idle  = 1;  /* the sticks were all centred last pass */
 
   /* ---- servo ----  (input comes from receiver CH5, the lever)
      lever at 1000us -> 2223us = 80 deg right
@@ -358,16 +377,41 @@ static void RC_Control(void)
   if (us > SERVO_US_MAX) us = SERVO_US_MAX;
 #endif
 
-  /* jitter control:
-       - a change smaller than SERVO_DEAD_US is stick noise the servo cannot
-         resolve anyway, so keep the old value and do not touch the timer;
-       - only write CCR when it really changes.  Combined with the CCR
-         preload set up in main(), every pulse stays a clean, full-width
-         one and the servo stops twitching. */
-  if (IABS(us - servo_us) >= SERVO_DEAD_US)
+  /* jitter control, three stages:
+       1. lever noise -- a new target closer than SERVO_DEAD_US to the one
+          in use is dropped; the servo cannot resolve it anyway;
+       2. slew limit  -- the command walks towards the target instead of
+          jumping to it, so a flick of the lever becomes a sweep;
+       3. write CCR only when the value really changes.  Combined with the
+          CCR preload set up in main(), every pulse stays clean and a
+          full-width one. */
+  if (servo_tgt < 0 || IABS(us - servo_tgt) >= SERVO_DEAD_US) servo_tgt = us;
+
   {
-    servo_us = us;
-    __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, (uint32_t)us);
+    uint32_t now = HAL_GetTick();
+    uint32_t dt  = now - servo_tick;
+
+    servo_tick = now;
+
+    if (servo_cur < 0)
+    {
+      servo_cur = servo_tgt;            /* first pass: no sweep, just go     */
+    }
+    else if (dt)
+    {
+      int32_t step = (int32_t)((uint32_t)dt * SERVO_SLEW_US_PER_S / 1000U);
+
+      if (step > SERVO_SLEW_MAX_STEP) step = SERVO_SLEW_MAX_STEP;
+
+      if      (servo_cur < servo_tgt) { servo_cur += step; if (servo_cur > servo_tgt) servo_cur = servo_tgt; }
+      else if (servo_cur > servo_tgt) { servo_cur -= step; if (servo_cur < servo_tgt) servo_cur = servo_tgt; }
+    }
+  }
+
+  if (servo_cur != servo_wr)
+  {
+    servo_wr = servo_cur;
+    __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, (uint32_t)servo_cur);
   }
 
   /* ---- fail-safe ---- */
