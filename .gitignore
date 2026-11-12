@@ -1,0 +1,47 @@
+# ---------- Keil MDK build output ----------
+MDK-ARM/jg/
+MDK-ARM/DebugConfig/
+MDK-ARM/RTE/
+*.o
+*.d
+*.crf
+*.axf
+*.hex
+*.bin
+*.elf
+*.map
+*.lst
+*.lnp
+*.dep
+*.iex
+*.sct
+*.htm
+*.build_log.htm
+_startup_*
+
+# ---------- Keil per-user / editor state ----------
+*.uvguix.*
+*.uvoptx
+*.uvopt
+*.bak
+JLinkLog.txt
+
+# ---------- local scratch & logs ----------
+build_out.txt
+flash_out.txt
+*.log
+
+# ---------- CMSIS blobs the project never references ----------
+# (the Keil project only uses CMSIS/Device and CMSIS/Include, so the
+#  DSP / NN / prebuilt-lib trees are ~200 MB of dead weight in a clone)
+Drivers/CMSIS/DSP/
+Drivers/CMSIS/NN/
+Drivers/CMSIS/Lib/
+Drivers/CMSIS/RTOS2/
+Drivers/CMSIS/Core_A/
+Drivers/CMSIS/docs/
+
+# ---------- OS junk ----------
+Thumbs.db
+desktop.ini
+.DS_Store
