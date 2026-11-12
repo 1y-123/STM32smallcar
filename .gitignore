@@ -45,3 +45,6 @@ Drivers/CMSIS/docs/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# local backups
+*.bak*

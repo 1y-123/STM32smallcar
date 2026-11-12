@@ -35,25 +35,18 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* ====== receiver channel -> function (change here to swap sticks) ======
-   MC6C has ONLY two layouts, no menu, no display.
-   Tell them apart by hand: the stick whose up/down does NOT spring back
-   to centre is the throttle stick, and the throttle is always CH3.
-     RC_HAND_MODE 2 = 左手模式 : throttle on the LEFT stick  (MC6C factory default)
-     RC_HAND_MODE 1 = 右手模式 : throttle on the RIGHT stick */
-#define RC_HAND_MODE  2
+/* ====== capture slot -> function ======
+   These numbers are TIMER CAPTURE SLOTS -- the index into rc_pulse[] --
+   NOT the channel numbers printed on the receiver.  The firmware only ever
+   sees the pulse width that arrives on a pin, so it does not matter what
+   the receiver happens to call that pin; what matters is which pin it is.
 
-#if RC_HAND_MODE == 2
-  #define RC_CH_ROT   1     /* CH1 right stick L/R = rotate  -> PA8 (TIM1_CH1) */
-  #define RC_CH_SERVO 2     /* CH2 right stick U/D = servo   -> PA9 (TIM1_CH2) */
-  #define RC_CH_FWD   3     /* CH3 left  stick U/D = forward -> PB8 (TIM4_CH3) */
-  #define RC_CH_LAT   4     /* CH4 left  stick L/R = strafe  -> PB9 (TIM4_CH4) */
-#else
-  #define RC_CH_ROT   1     /* CH1 right stick L/R = rotate  -> PA8 (TIM1_CH1) */
-  #define RC_CH_SERVO 2     /* CH2 left  stick U/D = servo   -> PA9 (TIM1_CH2) */
-  #define RC_CH_FWD   3     /* CH3 right stick U/D = forward -> PB8 (TIM4_CH3) */
-  #define RC_CH_LAT   4     /* CH4 left  stick L/R = strafe  -> PB9 (TIM4_CH4) */
-#endif
+     slot 1 = TIM1_CH1 = PA8      slot 2 = TIM1_CH2 = PA9
+     slot 3 = TIM4_CH3 = PB8      slot 4 = TIM4_CH4 = PB9                */
+#define RC_CH_ROT   1     /* PA8 <- receiver CH1 : right stick L/R = spin   */
+#define RC_CH_SERVO 2     /* PA9 <- receiver CH5 : lever           = servo  */
+#define RC_CH_FWD   3     /* PB8 <- receiver CH3 : left  stick U/D = fwd/back*/
+#define RC_CH_LAT   4     /* PB9 <- receiver CH4 : left  stick L/R = strafe */
 
 #define RC_TIMEOUT_MS 150   /* no pulse for this long -> fail-safe stop */
 #define RC_DEADBAND   25    /* center dead band, us */
@@ -243,10 +236,11 @@ static int32_t RC_Axis(uint8_t ch)
 }
 
 /* stick command -> wheel command curve, used on all three driving channels.
-   Below 75% of the stick the command is a flat 50%, so the car never creeps
-   along in the slow band where the four wheels disagree and it wanders;
-   75..100% of the stick then ramps 50..100%.  A stick inside the centre
-   dead band is still 0, so the car stops when released. */
+   The car cannot hold a straight line at very low speed -- the four motors
+   break away at different duty cycles, so it wanders.  Therefore the moment
+   the stick leaves the centre dead band the command already jumps to 50%,
+   then ramps linearly from 50% up to 100% at full travel.  A stick inside
+   the dead band is still 0, so the car stops when released. */
 static int32_t Stick_Curve(int32_t v)
 {
   int32_t d = IABS(v);
@@ -328,10 +322,10 @@ static void RC_Control(void)
   static uint32_t kick_until = 0; /* start-up boost runs until this tick */
   static uint8_t  kick_idle  = 1; /* the sticks were all centred last pass */
 
-  /* ---- servo ----
-     stick down  (1000us) -> 2223us = 80 deg right
-     stick centre(1500us) -> 1400us = straight ahead
-     stick up    (2000us) ->  572us = 80.5 deg left                */
+  /* ---- servo ----  (input comes from receiver CH5, the lever)
+     lever at 1000us -> 2223us = 80 deg right
+     lever at 1500us -> 1400us = straight ahead
+     lever at 2000us ->  572us = 80.5 deg left                     */
 #if SERVO_INSTALL_MODE
   /* shaft parked on the servo's mechanical centre; the stick is ignored */
   p = (int32_t)rc_pulse[RC_CH_SERVO];
